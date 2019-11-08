@@ -1,2 +1,0 @@
-# podcast
-For making podcasts
