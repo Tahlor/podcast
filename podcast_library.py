@@ -21,6 +21,7 @@ from server import PORT, USER
 # DATA = PREFIX + "Downloads" # different prefix
 
 logger = logging.getLogger("root")
+LOCAL_HOST = "192.168.187.103:{}".format(PORT)
 
 hyperlink='<a href="{}">{}</a>'
 
@@ -92,7 +93,7 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
     audio_files_path = Path(audio_files_path) if audio_files_path else podcast_xml_location
     csv_file = Path(podcast_xml_location / "TOC.csv")
     html_sub = f"{html_root}/{clean_quote(podcast_xml_location.relative_to(podcast_root).as_posix())}"
-    html_audio_sub = f"{html_root}/data/{url_quote(audio_files_path.relative_to(audio_root).as_posix())}"
+    html_audio_sub = f"{html_root}/podcasts/data/{url_quote(audio_files_path.relative_to(audio_root).as_posix())}"
     title_url = clean_quote(title)
 
     if not image:
@@ -163,13 +164,26 @@ def convert_link2(link):
     return link
 
 def create_podcast(title, podcast_root, podcast_folder=None, toc_path=None, html_root = r"https://students.cs.byu.edu/~tarch",
-                   category="Literature", description="N/A", alphabetize=True, image_link=None, google_drive=True, reverse_order=True):
+                   category="Literature", description="N/A", alphabetize=True, image_link=None, google_drive=True, 
+                   reverse_order=True, name="podcast.xml", output_folder_root=None):
+    
+    """
+    podcast_root: /home/pi/public_html/podcasts
+    podcast_folder: /home/pi/public_html/podcasts/Brandon Sanderson - Infinity Blade Redemption (Unabridged)
+
+
+    output_folder_root: usually podcast folder, could be somewhere else though;
+    """
+    print(podcast_root)
+    print(podcast_folder)
     # With reverse order, we make "Chapter 1" be the most recent entry
     # Open CSV
     if not podcast_folder:
         podcast_folder = Path(podcast_root) / title
     if not toc_path:
         toc_path = Path(podcast_folder) / "TOC.csv"
+    if not output_folder_root:
+        output_folder_root = podcast_root
 
     episode_list = open_csv_as_dict(toc_path)
 
@@ -197,22 +211,30 @@ def create_podcast(title, podcast_root, podcast_folder=None, toc_path=None, html
     fg.image(url=image_url, title=None, link=None, width=None, height=None, description=None)
 
     fg.rss_str(pretty=True)
-    fg.rss_file(os.path.join(podcast_folder, 'podcast.xml'))
+
+    # Add podcast name to path, create if needed
+    relative_path = Path(podcast_folder).relative_to(podcast_root) / name
+
+    output = Path(output_folder_root) / relative_path
+    output.parent.mkdir(exist_ok=True, parents=True)
+    fg.rss_file(str(output))
 
     if google_drive:
         link1 = input("Upload your podcast XML to Google drive. What is the download link for the podcast.xml? (it should have id= somewhere in the link)")
         print(convert_link2(link1))
     else:
-        relative_path = Path(podcast_folder).relative_to(podcast_root) / "podcast.xml"
         print("Link: " , Path(html_root) / url_quote(relative_path.as_posix()))
+    
+    return output
 
 def main(title, podcast_root, podcast_folder, audio_root, audio_files_path, html_root, image, csv_file_destination=None):
     if not csv_file_destination:
         csv_file_destination = Path(podcast_folder) / "TOC.csv"
 
     create_toc(title, podcast_root=podcast_root, podcast_xml_location=podcast_folder, audio_root=audio_root, audio_files_path=audio_files_path, image=image, html_root=html_root)
-    create_podcast(title, podcast_root=podcast_root, podcast_folder=podcast_folder, toc_path=csv_file_destination,
-                   html_root=html_root, google_drive=False, reverse_order=True)
+    xml_path = create_podcast(title, podcast_root=podcast_root, podcast_folder=podcast_folder, toc_path=csv_file_destination,
+                   html_root=html_root, google_drive=False, reverse_order=True, name="podcast.xml")
+    return xml_path
 
 def is_audio_file(filename):
     for ext in [".ogg", ".m4a", ".mp3", ".m4b"]:
@@ -261,22 +283,55 @@ def do_entire_folder(audio_root, destination_root, html_root):
             podcast_folder = Path(destination_root) / title
             podcast_folder.mkdir(exist_ok=True, parents=True)
 
-        main(title, podcast_root=destination_root, podcast_folder=podcast_folder, audio_root=audio_root, audio_files_path=dir, html_root=html_root, image=None)
-        finished_dirs.append(dir)
-    update_index(destination_root, html_root)
-    update_index(audio_root, html_root)
+        csv_file_destination = Path(podcast_folder) / "TOC.csv"
 
-def update_index(podcast_folder, html_root):
-    podcasts = Path(podcast_folder).rglob("podcast.xml")
-    html_file = Path(podcast_folder) / "index.html"
+        # Whole process
+        xml_path = main(title, podcast_root=destination_root, podcast_folder=podcast_folder, 
+                           audio_root=audio_root, audio_files_path=dir, html_root=html_root, 
+                           image=None, csv_file_destination=csv_file_destination)
+
+        copy_and_change(xml_path, dest=xml_path.parent /  "podcastl.xml", old_url=URL_ROOT, new_url=LOCAL_HOST)
+        # Create local version
+        #print(destination_root)
+        #xml_path = create_podcast(title, podcast_root=destination_root, podcast_folder=podcast_folder, toc_path=csv_file_destination,
+        #           html_root=LOCAL_HOST, google_drive=False, reverse_order=True, name="podcastl.xml", output_folder_root=destination_root+"l")
+
+        print(xml_path)
+        finished_dirs.append(dir)
+    update_index(destination_root, destination_root, REL_URL)
+    update_index(destination_root, destination_root+"l", "/podcasts", name="podcastl.xml")
+    update_index(audio_root, audio_root, REL_URL)
+
+def copy_and_change(xml_file, dest, old_url, new_url):
+    print(xml_file,dest, old_url)
+    xml_file, dest = Path(xml_file), Path(dest)
+    dest.parent.mkdir(exist_ok=True, parents=True)
+    shutil.copy(xml_file, dest)
+    with dest.open("rb") as f:
+        x = f.read()
+    x = x.replace(old_url.encode(), new_url.encode())
+    with dest.open("wb") as f:
+        f.write(x)
+
+def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
+    """ scan_folder - local folder to scan for xml files AND put index file
+                    "/home/pi/public_html/podcasts"
+        index_dst_folder - where to put the new index
+                    "/home/pi/public_html/podcasts_backup_index/"
+        html_path - this will precede whatever is found in the scan folder
+                    "/podcasts"
+        name - podcast.xml files to match
+    """
+    podcasts = Path(scan_folder).rglob(name)
+    html_file = Path(index_dst_folder) / "index.html"
 
     with html_file.open("w") as f:
         f.write("<pre>")
         ## Make this write HTML links
         for p in podcasts:
-            rel_path = p.relative_to(podcast_folder)
+            rel_path = p.relative_to(scan_folder)
             text = p.parent.name
-            url = html_root + "/" + url_quote(rel_path.as_posix().encode())
+            url = html_path + "/" + url_quote(rel_path.as_posix().encode())
             line = hyperlink.format(url, text) + "\n"
             f.write(line + "\n")
         f.write("</pre>")
@@ -309,6 +364,6 @@ if __name__=="__main__":
     URL_ROOT = f"http://127.0.0.1:{PORT}/podcasts" # for testing
     URL_ROOT = f"http://www.fife.entrydns.com/podcasts"
     URL_ROOT = f"http://www.taylorarchibald.com/podcasts"
-
-
+    #URL_ROOT = "/podcasts"
+    REL_URL = "/podcasts"
     do_entire_folder(LOCAL_DATA_PATH, LOCAL_PODCAST_ROOT, URL_ROOT)

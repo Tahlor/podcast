@@ -7,6 +7,7 @@ server_address = ("", 58372)
 USER = "pi"
 REDIRECTS = OrderedDict({r"/podcasts/data":f"/home/{USER}/public_html_data/podcasts",
                         r"/podcasts":f"/home/{USER}/public_html/podcasts",
+                        r"/podcastsl":f"/home/{USER}/public_html/podcastsl",
                         })
 
 for path in REDIRECTS.values():
