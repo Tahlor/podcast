@@ -6,7 +6,8 @@ PORT = 58372
 server_address = ("", 58372)
 USER = "pi"
 REDIRECTS = OrderedDict({r"/podcasts/data":f"/home/{USER}/public_html_data/podcasts",
-                        "r/podcasts":f"/home/{USER}/public_html/podcasts"})
+                        r"/podcasts":f"/home/{USER}/public_html/podcasts",
+                        })
 
 for path in REDIRECTS.values():
     Path(path).mkdir(exist_ok=True, parents=True)

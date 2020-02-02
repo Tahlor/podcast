@@ -264,6 +264,7 @@ def do_entire_folder(audio_root, destination_root, html_root):
         main(title, podcast_root=destination_root, podcast_folder=podcast_folder, audio_root=audio_root, audio_files_path=dir, html_root=html_root, image=None)
         finished_dirs.append(dir)
     update_index(destination_root, html_root)
+    update_index(audio_root, html_root)
 
 def update_index(podcast_folder, html_root):
     podcasts = Path(podcast_folder).rglob("podcast.xml")
