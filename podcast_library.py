@@ -360,10 +360,10 @@ if __name__=="__main__":
 
     LOCAL_DATA_PATH = rf"/home/{USER}/public_html_data/podcasts"
     LOCAL_PODCAST_ROOT = rf"/home/{USER}/public_html/podcasts"
-    URL_PATH = r"taylorarchibald.com/podcasts"
+    URL_PATH = r"taylorarchibald.com/"
     URL_ROOT = f"http://127.0.0.1:{PORT}/podcasts" # for testing
     URL_ROOT = f"http://www.fife.entrydns.com/podcasts"
-    URL_ROOT = f"http://www.taylorarchibald.com/podcasts"
+    URL_ROOT = f"http://www.taylorarchibald.com/"
     #URL_ROOT = "/podcasts"
     REL_URL = "/podcasts"
     do_entire_folder(LOCAL_DATA_PATH, LOCAL_PODCAST_ROOT, URL_ROOT)
