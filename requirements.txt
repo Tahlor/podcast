@@ -1,1 +1,3 @@
 feedgen
+pyyaml
+easydict
