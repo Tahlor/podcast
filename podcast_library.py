@@ -517,7 +517,7 @@ if __name__=="__main__":
     delete_folder(c.WAN_PODCAST_LOCAL_PATH)
     do_entire_folder(audio_root=c.LOCAL_DATA_PATH,
                      destination_root=c.WAN_PODCAST_LOCAL_PATH,
-                     html_root=f"{c.WAN_URL_ROOT}:{c.PORT}",
+                     html_root=f"{c.WAN_URL_ROOT}",
                      destination_root_lan=c.LAN_PODCAST_LOCAL_PATH,
                      html_root_lan=f"{c.LAN_URL_ROOT}:{c.PORT}",
                      )
