@@ -1,9 +1,10 @@
 PORT: 58372
-WAN_URL_ROOT: http://127.0.0.1 #PORT goes next, followed by /podcasts
+#WAN_URL_ROOT: http://www.fife.entrydns.org/ #PORT goes next, followed by /podcasts
+WAN_URL_ROOT: http://www.taylorarchibald.com #PORT goes next, followed by /podcasts
 LAN_URL_ROOT: http://192.168.187.103 #PORT goes next, followed by /podcasts
 
 URL_DATA_PATH: /podcasts/data
-LOCAL_DATA_PATH: /media/data/download
+LOCAL_DATA_PATH: /media/Flash128/Downloads
 
 WAN_PODCAST_URL_PATH: /podcasts
 WAN_PODCAST_LOCAL_PATH: /home/pi/public_html/podcasts
