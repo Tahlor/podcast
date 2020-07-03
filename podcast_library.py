@@ -17,6 +17,15 @@ from easydict import EasyDict as edict
 # taylorarchibald.com/podcasts => "/media/taylor/Flash128/Podcasts"
 # taylorarchibald.com/podcasts/data/this_podcast => "/media/taylor/Flash128/Downloads/this_podcasts"
 
+"""
+sudo apt-get install exfat-fuse
+sudo apt-get install exfat-utils
+
+mkdir /media/Flash128
+sudo mount /dev/sda5 /media/Flash128
+
+"""
+
 # PREFIX = "/media/taylor/Flash128/"
 # HOME_FOLDER = "" # the public datastructure; URL mirrors directory
 # DATA = PREFIX + "Downloads" # different prefix
