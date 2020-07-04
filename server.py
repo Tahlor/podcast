@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 from easydict import EasyDict as edict
 
+
 with open("config.yaml") as f:
     c = edict(yaml.load(f.read(), Loader=yaml.SafeLoader))
 
@@ -55,6 +56,6 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
         return http.server.SimpleHTTPRequestHandler.translate_path(self, path)
 
 if __name__=='__main__':
-    httpd = http.server.HTTPServer(server_address, MyRequestHandler)
+    httpd = http.server.ThreadingHTTPServer(server_address, MyRequestHandler)
     print(f"LINK: 127.0.0.1:{c.PORT}")
     httpd.serve_forever()

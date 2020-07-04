@@ -4,7 +4,7 @@ WAN_URL_ROOT: http://www.taylorarchibald.com #PORT goes next, followed by /podca
 LAN_URL_ROOT: http://192.168.187.103 #PORT goes next, followed by /podcasts
 
 URL_DATA_PATH: /podcasts/data
-LOCAL_DATA_PATH: /media/Flash128/Downloads
+LOCAL_DATA_PATH: /home/pi/Flash128/Downloads
 
 WAN_PODCAST_URL_PATH: /podcasts
 WAN_PODCAST_LOCAL_PATH: /home/pi/public_html/podcasts
