@@ -13,6 +13,11 @@ import re
 import logging
 import yaml
 from easydict import EasyDict as edict
+import socket
+
+CONFIG = "config_test2.yaml" if "raspberry" not in socket.gethostname() else "config.yaml"
+print("Using {}".format(CONFIG))
+
 
 # taylorarchibald.com/podcasts => "/media/taylor/Flash128/Podcasts"
 # taylorarchibald.com/podcasts/data/this_podcast => "/media/taylor/Flash128/Downloads/this_podcasts"
@@ -405,7 +410,7 @@ def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
             _update_index(folder, index_dst_folder / rel, Path(html_path) / rel, name=name)
 
 def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
-    """ Create index.html files for Podcast files
+    """ Create index.html files for Podcast files (used recursively)
 
         This puts all Podcasts on one index, recursively
 
@@ -443,8 +448,8 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
         f.write("</pre>")
 
 
-def update_index_old(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
-    """ Create index.html files for Podcast files for each folder
+def update_index_old(scan_folder, index_dst_path, url_prefix, name="podcast.xml"):
+    """ Create ONE index.html files for Podcast files for each folder
         This recursively scans the directory and puts them all on one page
         scan_folder - local folder to scan for xml files AND put index file
                     "/home/pi/public_html/podcasts"
@@ -455,15 +460,19 @@ def update_index_old(scan_folder, index_dst_folder, html_path, name="podcast.xml
         name - podcast.xml files to match
     """
     podcasts = Path(scan_folder).rglob(name)
-    html_file = Path(index_dst_folder) / "index.html"
+    if Path(index_dst_path).suffix != ".html":
+        Path(index_dst_path).mkdir(exist_ok=True, parents=True)
+        html_file_path = Path(index_dst_path) / "index.html"
+    else:
+        html_file_path = index_dst_path
 
-    with html_file.open("w") as f:
+    with html_file_path.open("w") as f:
         f.write("<pre>")
         ## Make this write HTML links
         for p in scan_folder:
             rel_path = p.relative_to(scan_folder)
             text = p.parent.name
-            url = html_path + "/" + url_quote(rel_path.as_posix().encode())
+            url = url_prefix + "/" + url_quote(rel_path.as_posix().encode())
             line = hyperlink.format(url, text) + "\n"
             f.write(line + "\n")
         f.write("</pre>")
@@ -510,7 +519,7 @@ def run():
 if __name__=="__main__":
     """ image should be the same name as the podcast title + image extension
     """
-    with open("config.yaml") as f:
+    with open(CONFIG) as f:
         c = edict(yaml.load(f.read(), Loader=yaml.SafeLoader))
 
     delete_folder(c.LAN_PODCAST_LOCAL_PATH)
@@ -521,6 +530,11 @@ if __name__=="__main__":
                      destination_root_lan=c.LAN_PODCAST_LOCAL_PATH,
                      html_root_lan=f"{c.LAN_URL_ROOT}:{c.PORT}",
                      )
+
+    # Make master file index for easy copying
+    update_index_old(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", c.WAN_PODCAST_URL_PATH, name="*")
+    update_index_old(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/ "files.html", c.LAN_PODCAST_URL_PATH, name = "*")
+
 
 """
 audio_root,
