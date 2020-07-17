@@ -18,6 +18,12 @@ import socket
 CONFIG = "config_test2.yaml" if "raspberry" not in socket.gethostname() else "config.yaml"
 print("Using {}".format(CONFIG))
 
+#### USAGE
+"""
+* ALL PODCASTS NEED TO HAVE THEIR OWN FOLDER!!
+
+"""
+
 
 # taylorarchibald.com/podcasts => "/media/taylor/Flash128/Podcasts"
 # taylorarchibald.com/podcasts/data/this_podcast => "/media/taylor/Flash128/Downloads/this_podcasts"
@@ -108,22 +114,25 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
     podcast_xml_location = Path(podcast_xml_location)
     audio_files_path = Path(audio_files_path) if audio_files_path else podcast_xml_location
     csv_file = Path(podcast_xml_location / "TOC.csv")
-    html_sub = f"{html_root}/{clean_quote(podcast_xml_location.relative_to(podcast_root).as_posix())}"
-    html_audio_sub = f"{html_root}/podcasts/data/{url_quote(audio_files_path.relative_to(audio_root).as_posix())}"
+    html_rel_podcast_xml = clean_quote(podcast_xml_location.relative_to(podcast_root).as_posix())
+    html_sub = f"{html_root}/{html_rel_podcast_xml}"
+    html_rel_audio = url_quote(audio_files_path.relative_to(audio_root).as_posix())
+    html_audio_sub = f"{html_root}/podcasts/data/{html_rel_audio}"
     title_url = clean_quote(title)
 
     if not image:
         image = find_image(audio_files_path)
+        # Look in audio folder
         if image:
-            image = html_audio_sub + image.relative_to(audio_files_path).as_posix()
-        else:
+            image = "podcasts/data/" + html_rel_audio + "/" + image.relative_to(audio_files_path).as_posix()
+        else: # look in podcast.xml folder
             image = find_image(podcast_xml_location);
             if image:
-                image = html_sub + image.relative_to(podcast_xml_location).as_posix()
+                image = html_rel_podcast_xml + "/" + image.relative_to(podcast_xml_location).as_posix()
             else:
-                image = html_sub + title_url + ".png"
+                image =  html_rel_podcast_xml + "/" + title_url + ".png"
 
-    d = {"Series": title, "Title": title, "Link": f"{html_audio_sub}", "Image": f"{html_sub}/{clean_quote(image)}"}
+    d = {"Series": title, "Title": title, "Link": f"{html_audio_sub}", "Image": f"{html_root}/{clean_quote(image)}"}
     i = 0
     with csv_file.open("w") as f:
         writer = csv.writer(f)
@@ -257,7 +266,7 @@ def main(title, podcast_root, podcast_folder, audio_root, audio_files_path, html
 
 def is_audio_file(filename):
     for ext in [".ogg", ".m4a", ".mp3", ".m4b"]:
-        if str(filename)[-len(ext):] == ext:
+        if Path(filename).suffix == ext:
             return True
     return False
 
@@ -278,6 +287,13 @@ def path_has_audio_file(path):
         if is_audio_file(p):
             return True
     return False
+
+def path_has_no_subs(path):
+    for p in path.glob("*"):
+        if p.is_dir():
+            if path_has_audio_file(p): # see if subfolders have audio files
+                return False
+    return True
 
 def do_entire_folder(audio_root,
                      destination_root,
@@ -325,15 +341,18 @@ def do_entire_folder(audio_root,
         #     logger.warning(f"Skipping {dir}, 1 subfolder and no audio files"); continue
 
         # If it has folders like "DISC", these should be grouped together
-        if len(list(dir.glob('*/'))) > 1 and "disc" in str(next(dir.glob('*/'))).lower():
+        if len(list(dir.glob('*/'))) > 1 and re.search("disc[0-9 ]+",str(next(dir.glob('*/'))).lower()):
+            print(str(next(dir.glob('*/'))).lower())
             podcast_folder, title = create_podcast(dir)
 
         # If it has audio files, it is a title
-        elif path_has_audio_file(dir):
+        elif path_has_audio_file(dir) and path_has_no_subs(dir):
             if audio_root == destination_root:
                 podcast_folder = dir
             else:
                 podcast_folder, title = create_podcast(dir)
+        #elif path_has_audio_file: # category with plain audio files and folders UGH
+        #    continue
         else: # doesn't have audio files, but does have folders -- it's a category!
 
             categories.append(dir)
@@ -409,7 +428,7 @@ def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
             rel = folder.relative_to(scan_folder)
             _update_index(folder, index_dst_folder / rel, Path(html_path) / rel, name=name)
 
-def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
+def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", use_parent_name=True):
     """ Create index.html files for Podcast files (used recursively)
 
         This puts all Podcasts on one index, recursively
@@ -434,7 +453,10 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
             for p in subfolder.glob(name):
                 if p.name == name:
                     rel_path = p.relative_to(scan_folder)
-                    text = p.parent.name
+                    if use_parent_name:
+                        text = p.parent.name
+                    else:
+                        text = "{}/{}".format(p.parent.name,p.name)
                     url = html_path / url_quote(rel_path.as_posix().encode())
                     line = hyperlink.format(url, text) + "\n"
                     f.write(line + "\n")
@@ -448,7 +470,7 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
         f.write("</pre>")
 
 
-def update_index_old(scan_folder, index_dst_path, url_prefix, name="podcast.xml"):
+def update_index_old(scan_folder, index_dst_path, html_path, name="podcast.xml", use_parent_name=True):
     """ Create ONE index.html files for Podcast files for each folder
         This recursively scans the directory and puts them all on one page
         scan_folder - local folder to scan for xml files AND put index file
@@ -465,15 +487,23 @@ def update_index_old(scan_folder, index_dst_path, url_prefix, name="podcast.xml"
         html_file_path = Path(index_dst_path) / "index.html"
     else:
         html_file_path = index_dst_path
-
+    lines = []
     with html_file_path.open("w") as f:
         f.write("<pre>")
         ## Make this write HTML links
-        for p in scan_folder:
+        for p in podcasts:
             rel_path = p.relative_to(scan_folder)
-            text = p.parent.name
-            url = url_prefix + "/" + url_quote(rel_path.as_posix().encode())
+            if use_parent_name:
+               text = p.parent.name
+            else:
+               text = "{}/{}".format(p.parent.name,p.name)
+
+            url = html_path + "/" + url_quote(rel_path.as_posix().encode())
+            #print(url)
             line = hyperlink.format(url, text) + "\n"
+            lines.append(line)
+        lines.sort()
+        for line in lines:
             f.write(line + "\n")
         f.write("</pre>")
 
@@ -522,9 +552,10 @@ if __name__=="__main__":
     with open(CONFIG) as f:
         c = edict(yaml.load(f.read(), Loader=yaml.SafeLoader))
 
-    delete_folder(c.LAN_PODCAST_LOCAL_PATH)
-    delete_folder(c.WAN_PODCAST_LOCAL_PATH)
-    do_entire_folder(audio_root=c.LOCAL_DATA_PATH,
+    if True:
+        delete_folder(c.LAN_PODCAST_LOCAL_PATH)
+        delete_folder(c.WAN_PODCAST_LOCAL_PATH)
+        do_entire_folder(audio_root=c.LOCAL_DATA_PATH,
                      destination_root=c.WAN_PODCAST_LOCAL_PATH,
                      html_root=f"{c.WAN_URL_ROOT}",
                      destination_root_lan=c.LAN_PODCAST_LOCAL_PATH,
@@ -532,8 +563,9 @@ if __name__=="__main__":
                      )
 
     # Make master file index for easy copying
-    update_index_old(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", c.WAN_PODCAST_URL_PATH, name="*")
-    update_index_old(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/ "files.html", c.LAN_PODCAST_URL_PATH, name = "*")
+    # These will be accessed in either the WAN/LAN_PODCAST_LOCAL_PATH (podcasts/podcastsl), so we need to go up a path ".."
+    update_index_old(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", '../podcasts/data', name="*", use_parent_name=False)
+    update_index_old(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/ "files.html", '../podcasts/data', name = "*", use_parent_name=False)
 
 
 """
