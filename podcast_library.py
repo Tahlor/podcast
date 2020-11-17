@@ -22,6 +22,7 @@ print("Using {}".format(CONFIG))
 """
 * ALL PODCASTS NEED TO HAVE THEIR OWN FOLDER!!
 
+# Web Permissions: chgrp -R pi * && chown -R pi * && chmod -R 777 *
 """
 
 
@@ -147,7 +148,8 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
         for i, f in enumerate(fs):
             f_relative_path = str(f.relative_to(audio_files_path)) # f.name
             link = f'{d["Link"]}/{clean_quote(f_relative_path)}'
-            title = f"{d['Title']} {f.stem}"
+            #title = f"{d['Title']} {f.stem}"
+            title =  f"{d['Title']} {' - '.join(f_relative_path.split('/'))}"
             line = d["Series"], title, link, d["Image"]
             writer.writerow(line)
 
@@ -290,9 +292,13 @@ def path_has_audio_file(path):
 
 def path_has_no_subs(path):
     for p in path.glob("*"):
-        if p.is_dir():
-            if path_has_audio_file(p): # see if subfolders have audio files
-                return False
+        try:
+            if p.is_dir():
+                if path_has_audio_file(p): # see if subfolders have audio files
+                    return False
+        except Exception as e:
+            print(e)
+            print("Problem parsing {p}, check filesystem using sudo fsck -cfk /dev/sdaX")
     return True
 
 def do_entire_folder(audio_root,
@@ -423,7 +429,7 @@ def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
     """
     _update_index(Path(scan_folder), Path(index_dst_folder), Path(html_path), name=name)
 
-    for folder in Path(scan_folder).rglob("*"):
+    for folder in sorted(Path(scan_folder).rglob("*")):
         if folder.is_dir():
             rel = folder.relative_to(scan_folder)
             _update_index(folder, index_dst_folder / rel, Path(html_path) / rel, name=name)
@@ -441,7 +447,7 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
                     "/podcasts"
         name - podcast.xml files to match
     """
-    folders = Path(scan_folder).glob("*")
+    folders = sorted(Path(scan_folder).glob("*"))
     index_dst_folder.mkdir(exist_ok=True, parents=True)
     html_file = Path(index_dst_folder) / "index.html"
 
@@ -450,7 +456,7 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
         ## Make this write HTML links
         for subfolder in folders:
             # Write out podcast link
-            for p in subfolder.glob(name):
+            for p in sorted(subfolder.glob(name)):
                 if p.name == name:
                     rel_path = p.relative_to(scan_folder)
                     if use_parent_name:
@@ -488,6 +494,7 @@ def update_index_old(scan_folder, index_dst_path, html_path, name="podcast.xml",
     else:
         html_file_path = index_dst_path
     lines = []
+    print("WRITING TO ", html_file_path)
     with html_file_path.open("w") as f:
         f.write("<pre>")
         ## Make this write HTML links
@@ -565,8 +572,8 @@ if __name__=="__main__":
     # Make master file index for easy copying
     # These will be accessed in either the WAN/LAN_PODCAST_LOCAL_PATH (podcasts/podcastsl), so we need to go up a path ".."
     update_index_old(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", '../podcasts/data', name="*", use_parent_name=False)
-    update_index_old(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/ "files.html", '../podcasts/data', name = "*", use_parent_name=False)
-
+    update_index_old(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/"files.html", '../podcasts/data', name = "*", use_parent_name=False)
+    # THESE ARE ACCESSIBLE AT fife.entrydns.org/podcasts/files.html
 
 """
 audio_root,
