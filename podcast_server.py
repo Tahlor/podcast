@@ -46,6 +46,7 @@ with open("config.yaml") as f:
 
 server_address = ("", c.PORT)
 REDIRECTS = OrderedDict({c.URL_DATA_PATH:c.LOCAL_DATA_PATH,
+                         c.URL_DATA_PATH2:c.LOCAL_DATA_PATH,
                         c.WAN_PODCAST_URL_PATH:c.WAN_PODCAST_LOCAL_PATH,
                         c.LAN_PODCAST_URL_PATH:c.LAN_PODCAST_LOCAL_PATH,
                         })

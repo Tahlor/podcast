@@ -306,7 +306,8 @@ def do_entire_folder(audio_root,
                      html_root,
                      destination_root_lan=None,
                      html_root_lan=None,
-                     rel_url="/podcasts"):
+                     rel_url="/podcasts",
+                     testing=False):
     """
 
     Args:
@@ -318,13 +319,17 @@ def do_entire_folder(audio_root,
     Returns:
 
     """
-    def already_done(finished_dirs, dir):
+    def already_done(finished_dirs, dir, verbose=True):
         for f in finished_dirs:
             if f in dir.parents:
-                logger.warning(f"Skipping {dir}, already did {f}")
+                if verbose:
+                    logger.warning(f"Skipping {dir}, already did {f}")
                 return True
         return False
-
+   
+    def already_done2(finished_dirs, dir, verbose=True):
+        return dir.parent in finished_dirs
+     
     def create_podcast(dir):
         category = dir.parent.relative_to(audio_root) if dir.parent in categories else ""
         title = clean(dir.name.replace("  ", " "))
@@ -333,37 +338,53 @@ def do_entire_folder(audio_root,
         return podcast_folder, title
 
     audio_root = Path(audio_root)
-    finished_dirs = []
-
+    finished_dirs = {}
+    standalone = []
     categories = []
-    for dir in audio_root.rglob('*/**/'):
-        # Process the highest level directory first
-        if already_done(finished_dirs, dir):
+    for dir in audio_root.rglob('*'):
+        #for dir in audio_root.rglob('*/**/'): # for scanning folders only
+    
+        # We Process the highest level directory first
+        if already_done2(finished_dirs, dir, verbose=False):
             continue
 
         # If it has no audio files and just one subdirectory, skip it
             # This is usually a book with one too many root directories -- use the lowest possible folder as the root
-        # if len(list(dir.glob('*/'))) <= 1 and not path_has_audio_file(dir):  # fewer than one subdirectory, then skip:
-        #     logger.warning(f"Skipping {dir}, 1 subfolder and no audio files"); continue
 
-        # If it has folders like "DISC", these should be grouped together
-        if len(list(dir.glob('*/'))) > 1 and re.search("disc[0-9 ]+",str(next(dir.glob('*/'))).lower()):
-            print(str(next(dir.glob('*/'))).lower())
-            podcast_folder, title = create_podcast(dir)
-
-        # If it has audio files, it is a title
-        elif path_has_audio_file(dir) and path_has_no_subs(dir):
-            if audio_root == destination_root:
-                podcast_folder = dir
-            else:
+        if dir.is_dir():
+            # If it has folders like "DISC", these should be grouped together
+            subfolders=list(dir.glob('*/'))
+            if len(subfolders) > 1 and re.search("disc[0-9 ]+",str(next(dir.glob('*/'))).lower()):
+                print(str(next(dir.glob('*/'))).lower())
                 podcast_folder, title = create_podcast(dir)
-        #elif path_has_audio_file: # category with plain audio files and folders UGH
-        #    continue
-        else: # doesn't have audio files, but does have folders -- it's a category!
+                    
+            # If it has audio files, it is a title
+            elif path_has_audio_file(dir) and path_has_no_subs(dir):
+                if audio_root == destination_root:
+                    podcast_folder = dir
+                else:
+                    podcast_folder, title = create_podcast(dir)
+            else: # doesn't have audio files, but does have folders -- it's a category!
 
-            categories.append(dir)
+                categories.append(dir)
+                continue
+        elif is_audio_file(dir.name) or dir.suffix.lower() in [".epub",".mobi",".pdf"]:
+            #standalone.append(dir)
+            #dir.name
+            #podcast_folder, title = create_podcast(dir)
+            #print(dir, destination_root, audio_root)
+            #input()
+            dst = destination_root / dir.relative_to(audio_root)
+            dst.parent.mkdir(exist_ok=True,parents=True)
+            os.symlink(dir, dst)
+            continue
+        else:
             continue
 
+        for sub in subfolders:
+            finished_dirs[sub]=0
+        finished_dirs[dir] = 0
+            
         # What if it is a category and has audio files (each is a complete book) and subfolders
         # Not allowed -- all files must be in a folder
 
@@ -378,10 +399,13 @@ def do_entire_folder(audio_root,
         lan_mirror = destination_root_lan / xml_path.parent.relative_to(destination_root)
         copy_and_change(xml_path, dest=lan_mirror /  "podcastl.xml", old_url=html_root, new_url=html_root_lan)
         print(xml_path)
-        finished_dirs.append(dir)
-
+        
+        if testing:
+            print("TESTING")
+            break
+        
     # Normal HTML index of podcasts
-    update_index(destination_root, destination_root, rel_url)
+    update_index(destination_root, destination_root, rel_url, find_other_files=True)
 
     # Make a local network version
     if html_root_lan is not None:
@@ -389,7 +413,7 @@ def do_entire_folder(audio_root,
             destination_root_lan = destination_root + "l"
         Path(destination_root_lan).mkdir(exist_ok=True, parents=True)
         update_index(destination_root_lan, destination_root_lan, "/podcastsl", name="podcastl.xml")
-
+        # ADD OPTION FOR STANDALONES
     # WHAT DOES THIS DO?
     #update_index(audio_root, audio_root, rel_url)
 
@@ -415,7 +439,7 @@ def copy_and_change(xml_file, dest, old_url, new_url):
     with dest.open("wb") as f:
         f.write(x)
 
-def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
+def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", find_other_files=True):
     """ Loop through directory, create index.html's of folders
 
     Args:
@@ -427,17 +451,17 @@ def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml"):
     Returns:
 
     """
-    _update_index(Path(scan_folder), Path(index_dst_folder), Path(html_path), name=name)
+    _update_index(Path(scan_folder), Path(index_dst_folder), Path(html_path), name=name, find_other_files=find_other_files)
 
     for folder in sorted(Path(scan_folder).rglob("*")):
         if folder.is_dir():
             rel = folder.relative_to(scan_folder)
-            _update_index(folder, index_dst_folder / rel, Path(html_path) / rel, name=name)
+            _update_index(folder, index_dst_folder / rel, Path(html_path) / rel, name=name, find_other_files=find_other_files)
 
-def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", use_parent_name=True):
-    """ Create index.html files for Podcast files (used recursively)
-
-        This puts all Podcasts on one index, recursively
+def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", find_other_files=True):
+    """ Create index.html files for Podcast files - recursive call from update_index
+            This the main podcast index (not the file/all ones)
+        This puts all Podcasts on one index, recursively -- it looks for the podcast.xml files in the web directory
 
         scan_folder - local folder to scan for xml files AND put index file
                     "/home/pi/public_html/podcasts"
@@ -447,34 +471,48 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
                     "/podcasts"
         name - podcast.xml files to match
     """
-    folders = sorted(Path(scan_folder).glob("*"))
+    folders = Path(scan_folder).glob("*")
     index_dst_folder.mkdir(exist_ok=True, parents=True)
     html_file = Path(index_dst_folder) / "index.html"
 
     with html_file.open("w") as f:
-        f.write("<pre>")
+        f.write("<pre>\n")
+        f.write(f'<a href="{html_path}/files.html">ALL</a>\n\n')
+
+        temp_html_path = re.sub(r"(podcasts[l]*/)",r"\1data/",str(html_path))
+        f.write(f'<a href="{temp_html_path}">FILE_VIEW</a>\n\n')
+
         ## Make this write HTML links
-        for subfolder in folders:
+        for subfolder in sorted(folders):
             # Write out podcast link
-            for p in sorted(subfolder.glob(name)):
+            for p in subfolder.glob(name):
+                #input(find_other_files)
                 if p.name == name:
                     rel_path = p.relative_to(scan_folder)
-                    if use_parent_name:
-                        text = p.parent.name
-                    else:
-                        text = "{}/{}".format(p.parent.name,p.name)
+                    text = p.parent.name
                     url = html_path / url_quote(rel_path.as_posix().encode())
                     line = hyperlink.format(url, text) + "\n"
                     f.write(line + "\n")
-            if (subfolder.is_dir() and has_children_folders(subfolder)):
+
+            if ((subfolder.is_dir() and has_children_folders(subfolder)) or
+                    (has_book(subfolder) and find_other_files)):
                 rel_path = subfolder.relative_to(scan_folder)
                 text = subfolder.name
                 url = html_path / url_quote(rel_path.as_posix().encode())
                 line = hyperlink.format(url, text) + "\n"
                 f.write(line + "\n")
 
-        f.write("</pre>")
+        if find_other_files:
+            for p in Path(scan_folder).glob('*'):
+                if is_audio_file(p.name) or p.suffix.lower() in [".epub",".mobi",".pdf"]:
+                    rel_path = p.relative_to(scan_folder)
+                    text = p.name
+                    #input(text)
+                    url = html_path / url_quote(rel_path.as_posix().encode())
+                    line = hyperlink.format(url, text) + "\n"
+                    f.write(line + "\n")
 
+        f.write("</pre>")
 
 def update_index_old(scan_folder, index_dst_path, html_path, name="podcast.xml", use_parent_name=True):
     """ Create ONE index.html files for Podcast files for each folder
@@ -494,28 +532,117 @@ def update_index_old(scan_folder, index_dst_path, html_path, name="podcast.xml",
     else:
         html_file_path = index_dst_path
     lines = []
+
+    ## Make this write HTML links
+    for p in podcasts:
+        rel_path = p.relative_to(scan_folder)
+        if use_parent_name:
+           text = p.parent.name
+        else:
+           text = "{}/{}".format(p.parent.name,p.name)
+
+        url = html_path + "/" + url_quote(rel_path.as_posix().encode())
+        #print(url)
+        line = hyperlink.format(url, text) + "\n"
+        lines.append(line)
+    lines.sort()
+
     print("WRITING TO ", html_file_path)
     with html_file_path.open("w") as f:
         f.write("<pre>")
-        ## Make this write HTML links
-        for p in podcasts:
-            rel_path = p.relative_to(scan_folder)
-            if use_parent_name:
-               text = p.parent.name
-            else:
-               text = "{}/{}".format(p.parent.name,p.name)
-
-            url = html_path + "/" + url_quote(rel_path.as_posix().encode())
-            #print(url)
-            line = hyperlink.format(url, text) + "\n"
-            lines.append(line)
-        lines.sort()
         for line in lines:
             f.write(line + "\n")
         f.write("</pre>")
 
+def update_index_old2(scan_folder, index_dst_path, html_path, name="podcast.xml", use_parent_name=True, master_dict={}, root_scan_folder=None):
+    """ Create recursive index.html files for Podcast files for each folder
+        Recursively recursive: each folder contains a file with links to ALL subdirectories, sub-sub-dirs, etc.
+    
+        This recursively scans the directory and puts them all on one page
+        scan_folder - local folder to scan for xml files AND put index file
+                    "/home/pi/public_html/podcasts"
+        index_dst_folder - where to put the new index
+                    "/home/pi/public_html/podcasts_backup_index/"
+        html_path - this will precede whatever is found in the scan folder
+                    "/podcasts"
+        name - podcast.xml files to match
+        use_parent_name (bool) - for the URL link text, include the parent folder
+        root_scan_folder - the "top" level scan folder; this is needed to compute the relative path for the HTML links
+    """
+    if root_scan_folder is None:
+        root_scan_folder = scan_folder
+    index_dst_path = Path(index_dst_path)
+    if index_dst_path.suffix != ".html":
+        index_dst_path.mkdir(exist_ok=True, parents=True)
+        html_file_path = index_dst_path / "index.html"
+    else:
+        html_file_path = index_dst_path
+        index_dst_path.parent.mkdir(exist_ok=True, parents=True)
+    lines = []
+
+    ## Make this write HTML links
+
+    #master_dict[scan_folder] = master_dict = {}
+    # Get all podcasts (files that match "name") in current folder
+    #master_dict["~:podcasts:~"] = curr_folder_file_list = []
+    curr_folder_file_list = []
+    for podcast_xml in Path(scan_folder).glob(name):
+        curr_folder_file_list.append(podcast_xml)
+        rel_path = podcast_xml.relative_to(root_scan_folder)
+        #print(rel_path, scan_folder, podcast_xml)
+        #input()
+        
+        if use_parent_name:
+           text = podcast_xml.parent.name
+        else:
+           text = "{}/{}".format(podcast_xml.parent.name,podcast_xml.name)
+        
+        if podcast_xml.is_file():
+            url = html_path + "/" + url_quote(rel_path.as_posix().encode())
+        else:
+            url = str(Path(html_path).parent) + "/" + url_quote(rel_path.as_posix().encode()) + "/files.html"
+            #print(url, text, rel_path)
+            #input("HERE")
+
+        #print(url)
+        line = hyperlink.format(url, text) + "\n"
+        lines.append(line)
+
+        
+    lines.sort()
+
+    for p in Path(scan_folder).glob("*"): # recursive part, check all subfolders
+        if p.is_dir(): # everything should be a directory
+            new_index_dst_path = index_dst_path.parent / p.name / index_dst_path.name
+            print(index_dst_path, new_index_dst_path)
+            l = update_index_old2(p, new_index_dst_path, html_path, name=name, use_parent_name=False, master_dict=master_dict, root_scan_folder=root_scan_folder)
+            #print(l)
+            lines.extend(l)
+            #STOP
+    print("WRITING TO ", html_file_path)
+    with html_file_path.open("w") as f:
+        f.write("<pre>")
+        for line in lines:
+            f.write(line + "\n")
+        f.write("</pre>")
+    return lines
+
 def has_children_folders(dir, minimum=0):
     return len([x for x in dir.glob('*/') if x.is_dir()]) > minimum
+
+def has_book(dir):
+    for ftype in ["*.pdf", "*.mobi", "*.epub", "*.mp3", "*.m4a", "*.m4b", "*.ogg"]:
+        for i in Path(dir).rglob(ftype):
+            return True
+    return False
+
+ALL_FILES = {".pdf":"", ".mobi":"", ".epub":"", ".mp3":"", ".m4a":"", ".m4b":"", ".ogg":""}
+
+def has_book(dir):
+    for i in Path(dir).rglob("*"):
+        if i.suffix in ALL_FILES.keys():
+            return True
+    return False
 
 def do_one():
     title = "CS472_Lectures"  # Should mirror the foldername!!! Also the image!
@@ -571,9 +698,12 @@ if __name__=="__main__":
 
     # Make master file index for easy copying
     # These will be accessed in either the WAN/LAN_PODCAST_LOCAL_PATH (podcasts/podcastsl), so we need to go up a path ".."
-    update_index_old(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", '../podcasts/data', name="*", use_parent_name=False)
-    update_index_old(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/"files.html", '../podcasts/data', name = "*", use_parent_name=False)
+    update_index_old2(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", html_path='/podcasts/data', name="*", use_parent_name=False)
+    update_index_old2(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/"files.html", html_path='/podcasts/data', name = "*", use_parent_name=False)
+    
+    
     # THESE ARE ACCESSIBLE AT fife.entrydns.org/podcasts/files.html
+
 
 """
 audio_root,
