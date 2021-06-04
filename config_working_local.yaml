@@ -10,11 +10,9 @@ LOCAL_DATA_PATH: /home/pi/Flash128/Downloads
 WAN_PODCAST_URL_PATH: /podcasts
 WAN_PODCAST_LOCAL_PATH: /home/pi/public_html/podcasts
 
-LAN_PODCAST_URL_PATH: /podcasts
-LAN_PODCAST_LOCAL_PATH: /home/pi/public_html/podcasts
+LAN_PODCAST_URL_PATH: /podcastsl
+LAN_PODCAST_LOCAL_PATH: /home/pi/public_html/podcastsl
 
+LOCAL_VERSION: true
 # Don't use local -- just IPROUTE the external subdomain to the local host! 
-    # DDWRT -> Services -> DNSMasq
-    # Must be same port
-    # address=/podcasts.taylorarchibald.com/192.168.187.103
-    # make a link, ln podcasts podcastsl -s
+#

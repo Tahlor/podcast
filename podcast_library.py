@@ -1,7 +1,6 @@
-
 ## DOWNLOAD ALL VIDEOS
 import requests
-import re
+import regex as re
 from urllib.parse import quote as url_quote # unquote
 import shutil
 from pathlib import Path
@@ -9,14 +8,14 @@ import csv
 import os
 import time
 from feedgen.feed import FeedGenerator
-import re
 import logging
 import yaml
 from easydict import EasyDict as edict
 import socket
+import warnings
+from podcast_utils import *
 
-CONFIG = "config_test2.yaml" if "raspberry" not in socket.gethostname() else "config.yaml"
-print("Using {}".format(CONFIG))
+LEADING_ZEROS=re.compile(r'(?:^|(?<=Ch[apter\.]*[ ]*[^0-9]))([0-9]{1,3})(?=$|[^0-9])')
 
 #### USAGE
 """
@@ -48,11 +47,17 @@ sudo mount /dev/sda5 /media/Flash128
 logger = logging.getLogger("root")
 hyperlink='<a href="{}">{}</a>'
 
-def clean_quote(string):
-    return url_quote(clean(string))
+def clean_quote(string, clean=True):
+    if clean:
+        string = clean_string(string)
+    return url_quote(string)
 
-def clean(string):
-    new = re.sub(r'- .\W+', '', string) # .replace(" - ","_")
+def clean_string(old_string):
+    #return old_string
+    new = re.sub(r'[\s]+', ' ', old_string) # .replace(" - ","_")
+    #if old_string != new:
+    #    print(old_string, "\n", new)
+    #    input()
     return new
 
 def download_videos(root = Path(r"/home/taylor/Desktop/Naturally Slim")):
@@ -139,15 +144,17 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
         writer = csv.writer(f)
         writer.writerow(d.keys())
 
+        # Find all of the audio files
         fs = []
         for f in (audio_files_path).rglob("*"):
             if is_audio_file(f):
                 fs.append(f)
         fs.sort()
 
+        # Sort and create episodes for them
         for i, f in enumerate(fs):
             f_relative_path = str(f.relative_to(audio_files_path)) # f.name
-            link = f'{d["Link"]}/{clean_quote(f_relative_path)}'
+            link = f'{d["Link"]}/{clean_quote(f_relative_path, clean=False)}'
             #title = f"{d['Title']} {f.stem}"
             title =  f"{d['Title']} {' - '.join(f_relative_path.split('/'))}"
             line = d["Series"], title, link, d["Image"]
@@ -156,13 +163,14 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
     print(f"Found {i + 1} files.")
     return d
 
-def add_episode(fg, episode_link, name, series, image_url=None):
+def add_episode(fg, episode_link, name, series, image_url=None, index=0):
     fe = fg.add_entry()
     fe.id(name)
     fe.title(name)
     fe.description(series)
     fe.enclosure(episode_link, 0, 'audio/mpeg')
     fe.link(href=episode_link, rel='alternate')
+    fe.pubDate(get_date(index))
 
 def open_csv(file_path, encoding="utf-8-sig"):
     # global file_list
@@ -191,10 +199,14 @@ def convert_link2(link):
     link = "https://drive.google.com/uc?export=download&id=" + id
     return link
 
+def add_zero_to_chapter(episode_name):
+    return LEADING_ZEROS.sub(lambda x: '%03d' % (int(x.group(1)),), episode_name)
+    #return episode_name
+
 def create_podcast(title, podcast_root, podcast_folder=None, toc_path=None, html_root = r"https://students.cs.byu.edu/~tarch",
                    category="Literature", description="N/A", alphabetize=True, image_link=None, google_drive=True, 
                    reverse_order=True, name="podcast.xml", output_folder_root=None):
-    
+
     """
     Creates a .XML file of the podcast
 
@@ -230,13 +242,19 @@ def create_podcast(title, podcast_root, podcast_folder=None, toc_path=None, html
 
     # Sort the list
     if alphabetize:
-        episode_list = sorted(episode_list, key = lambda x: x["Title"])
+        episode_list = sorted(episode_list, key = lambda x: add_zero_to_chapter(x["Title"]))
         #print(episode_list)
     if reverse_order:
         episode_list = episode_list[::-1]
 
-    for episode in episode_list:
-        add_episode(fg, episode["Link"], episode["Title"], episode["Series"], episode["Image"])
+    for i,episode in enumerate(episode_list):
+        add_episode(fg, episode["Link"], episode["Title"], episode["Series"], episode["Image"], index=len(episode_list) - i - 1)
+
+        # DEBUG SPECIFIC EPISODE
+        #if "good" in episode["Title"].lower():
+        #    print(id, title, description, episode)
+        #    input()
+    
     image_url = image_link if not image_link is None else episode["Image"]
     fg.image(url=image_url, title=None, link=None, width=None, height=None, description=None)
 
@@ -307,7 +325,9 @@ def do_entire_folder(audio_root,
                      destination_root_lan=None,
                      html_root_lan=None,
                      rel_url="/podcasts",
-                     testing=False):
+                     testing=False,
+                     filter="*",
+                     local_version=True):
     """
 
     Args:
@@ -315,7 +335,8 @@ def do_entire_folder(audio_root,
         destination_root: where to put the podcast files, e.g. /home/pi/public_html/podcasts
         html_root: web address, 192.168.187.103:58372/podcasts
         rel_url: /podcasts
-
+        filter (str): only include folders with this string
+        local_version (bool): make a podcastl version for LAN access
     Returns:
 
     """
@@ -332,7 +353,7 @@ def do_entire_folder(audio_root,
      
     def create_podcast(dir):
         category = dir.parent.relative_to(audio_root) if dir.parent in categories else ""
-        title = clean(dir.name.replace("  ", " "))
+        title = clean_string(dir.name.replace("  ", " "))
         podcast_folder = Path(destination_root) / category / title
         podcast_folder.mkdir(exist_ok=True, parents=True)
         return podcast_folder, title
@@ -341,9 +362,26 @@ def do_entire_folder(audio_root,
     finished_dirs = {}
     standalone = []
     categories = []
-    for dir in audio_root.rglob('*'):
+
+    # Only include
+    if filter=='':
+        filter="*"
+    elif "*" not in filter:
+        filter = "*{}*".format(filter)
+    print("Filter", filter)
+
+    for dir in audio_root.rglob(filter):
+        # See if directory is working
+        try:
+            os.path.exists(dir)
+            dir.is_dir()
+        except Exception as e:
+            logger.warning(e)
+            logger.warning("Couldn't read {}".format(dir))
+            input()
+            continue
         #for dir in audio_root.rglob('*/**/'): # for scanning folders only
-    
+
         # We Process the highest level directory first
         if already_done2(finished_dirs, dir, verbose=False):
             continue
@@ -357,7 +395,7 @@ def do_entire_folder(audio_root,
             if len(subfolders) > 1 and re.search("disc[0-9 ]+",str(next(dir.glob('*/'))).lower()):
                 print(str(next(dir.glob('*/'))).lower())
                 podcast_folder, title = create_podcast(dir)
-                    
+
             # If it has audio files, it is a title
             elif path_has_audio_file(dir) and path_has_no_subs(dir):
                 if audio_root == destination_root:
@@ -391,28 +429,35 @@ def do_entire_folder(audio_root,
         csv_file_destination = Path(podcast_folder) / "TOC.csv"
 
         # Whole process
-        xml_path = main(title, podcast_root=destination_root, podcast_folder=podcast_folder, 
+        try:
+            xml_path = main(title, podcast_root=destination_root, podcast_folder=podcast_folder, 
                            audio_root=audio_root, audio_files_path=dir, html_root=html_root, 
                            image=None, csv_file_destination=csv_file_destination)
 
-        # Save podcast.xml with new URL
-        lan_mirror = destination_root_lan / xml_path.parent.relative_to(destination_root)
-        copy_and_change(xml_path, dest=lan_mirror /  "podcastl.xml", old_url=html_root, new_url=html_root_lan)
-        print(xml_path)
-        
+            # Save podcast.xml with new URL
+            if local_version:
+                lan_mirror = destination_root_lan / xml_path.parent.relative_to(destination_root)
+                copy_and_change(xml_path, dest=lan_mirror /  "podcastl.xml", old_url=html_root, new_url=html_root_lan)
+                print(xml_path)
+        except Exception as e:
+            logger.warning(e)
+            raise e
+            #print("xml_path: ", xml_path, " html_root: ", html_root, " title: ", title, " audio root: ", audio_root)
+
         if testing:
             print("TESTING")
             break
         
     # Normal HTML index of podcasts
-    update_index(destination_root, destination_root, rel_url, find_other_files=True)
+    update_index(destination_root, destination_root, rel_url, find_other_files=True, filter=filter)
 
     # Make a local network version
-    if html_root_lan is not None:
-        if destination_root_lan is None:
-            destination_root_lan = destination_root + "l"
-        Path(destination_root_lan).mkdir(exist_ok=True, parents=True)
-        update_index(destination_root_lan, destination_root_lan, "/podcastsl", name="podcastl.xml")
+    if local_version:
+        if html_root_lan is not None:
+            if destination_root_lan is None:
+                destination_root_lan = destination_root + "l"
+            Path(destination_root_lan).mkdir(exist_ok=True, parents=True)
+            update_index(destination_root_lan, destination_root_lan, "/podcastsl", name="podcastl.xml", filter=filter)
         # ADD OPTION FOR STANDALONES
     # WHAT DOES THIS DO?
     #update_index(audio_root, audio_root, rel_url)
@@ -439,7 +484,7 @@ def copy_and_change(xml_file, dest, old_url, new_url):
     with dest.open("wb") as f:
         f.write(x)
 
-def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", find_other_files=True):
+def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", find_other_files=True, filter="*"):
     """ Loop through directory, create index.html's of folders
 
     Args:
@@ -453,12 +498,12 @@ def update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", f
     """
     _update_index(Path(scan_folder), Path(index_dst_folder), Path(html_path), name=name, find_other_files=find_other_files)
 
-    for folder in sorted(Path(scan_folder).rglob("*")):
+    for folder in sorted(Path(scan_folder).rglob(filter)):
         if folder.is_dir():
             rel = folder.relative_to(scan_folder)
             _update_index(folder, index_dst_folder / rel, Path(html_path) / rel, name=name, find_other_files=find_other_files)
 
-def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", find_other_files=True):
+def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", find_other_files=True, filter="*"):
     """ Create index.html files for Podcast files - recursive call from update_index
             This the main podcast index (not the file/all ones)
         This puts all Podcasts on one index, recursively -- it looks for the podcast.xml files in the web directory
@@ -471,7 +516,7 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
                     "/podcasts"
         name - podcast.xml files to match
     """
-    folders = Path(scan_folder).glob("*")
+    folders = Path(scan_folder).glob(filter)
     index_dst_folder.mkdir(exist_ok=True, parents=True)
     html_file = Path(index_dst_folder) / "index.html"
 
@@ -683,9 +728,24 @@ def run():
 if __name__=="__main__":
     """ image should be the same name as the podcast title + image extension
     """
+
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="config.yaml")
+    parser.add_argument("--test", action="store_true")
+    opts = parser.parse_args()
+
+    CONFIG = "config_test2.yaml" if "raspberry" not in socket.gethostname() and opts.config=="config.yaml" else opts.config
+    print("Using {}".format(CONFIG))
+
     with open(CONFIG) as f:
         c = edict(yaml.load(f.read(), Loader=yaml.SafeLoader))
 
+    # Filter only includes paths that contain this string -- only works for the podcast generation part, not the directory parsing
+    if not "FILTER" in c:
+        c.FILTER=""
+
+    local_version = "LOCAL_VERSION" in c and c.LOCAL_VERSION
     if True:
         delete_folder(c.LAN_PODCAST_LOCAL_PATH)
         delete_folder(c.WAN_PODCAST_LOCAL_PATH)
@@ -694,14 +754,18 @@ if __name__=="__main__":
                      html_root=f"{c.WAN_URL_ROOT}",
                      destination_root_lan=c.LAN_PODCAST_LOCAL_PATH,
                      html_root_lan=f"{c.LAN_URL_ROOT}:{c.PORT}",
+                     filter=c.FILTER,
+                     local_version=local_version
                      )
 
     # Make master file index for easy copying
     # These will be accessed in either the WAN/LAN_PODCAST_LOCAL_PATH (podcasts/podcastsl), so we need to go up a path ".."
     update_index_old2(c.LOCAL_DATA_PATH, Path(c.WAN_PODCAST_LOCAL_PATH)/"files.html", html_path='/podcasts/data', name="*", use_parent_name=False)
-    update_index_old2(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/"files.html", html_path='/podcasts/data', name = "*", use_parent_name=False)
-    
-    
+
+    if local_version:
+        update_index_old2(c.LOCAL_DATA_PATH, Path(c.LAN_PODCAST_LOCAL_PATH)/"files.html", html_path='/podcasts/data', name = "*", use_parent_name=False)
+
+
     # THESE ARE ACCESSIBLE AT fife.entrydns.org/podcasts/files.html
 
 

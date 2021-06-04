@@ -83,6 +83,7 @@ class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
         print("Raw path", path)
         path = unquote(path)
         print("Translated", path)
+        path = path.replace("podcastl.xml", "podcast.xml") # no longer hosting podcastl
         for prefix in REDIRECTS.keys():
             if self.path.startswith(prefix):
                 if self.path == prefix or self.path == prefix + '/':
