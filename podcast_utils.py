@@ -9,11 +9,16 @@ def get_date(offset=0):
     """ Offset in years
     """
     #nowdt = datetime.datetime.now()
-    nowdt = datetime.datetime(2021,1,6)
-    d_aware = timezone.localize(nowdt)
-    return d_aware - datetime.timedelta(days=int(365.25*offset))
-    # utils.format_datetime(
-
+    try:
+        nowdt = datetime.datetime(2021,1,6)
+        d_aware = timezone.localize(nowdt)
+        return d_aware - datetime.timedelta(days=int(365.25*offset))
+        # utils.format_datetime(
+    except Exception as e:
+        print(e)
+        print(nowdt)
+        print(d_aware)
+        print(offset)
 
 import logging
 logger = logging.getLogger("root")
