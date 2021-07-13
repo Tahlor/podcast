@@ -119,17 +119,26 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
     Returns:
 
     """
+    fs = []
     podcast_xml_location = Path(podcast_xml_location)
     audio_files_path = Path(audio_files_path) if audio_files_path else podcast_xml_location
     csv_file = Path(podcast_xml_location / "TOC.csv")
     html_rel_podcast_xml = clean_quote(podcast_xml_location.relative_to(podcast_root).as_posix())
     html_sub = f"{html_root}/{html_rel_podcast_xml}"
+
+    # SOLO podcast found in folder
+    if is_audio_file(audio_files_path):
+        fs.append(audio_files_path)
+        audio_files_path = audio_files_path.parent # for relative pathing etc. below
+        print("PODCAST PATH IS 1 AUDIO FILE", audio_files_path)
+    SOLO = True if fs else False
+
     html_rel_audio = url_quote(audio_files_path.relative_to(audio_root).as_posix())
     html_audio_sub = f"{html_root}/podcasts/data/{html_rel_audio}"
     title_url = clean_quote(title)
 
     if not image:
-        image = find_image(audio_files_path)
+        image = find_image(audio_files_path, recursive=not SOLO)
         # Look in audio folder
         if image:
             image = "podcasts/data/" + html_rel_audio + "/" + image.relative_to(audio_files_path).as_posix()
@@ -148,12 +157,8 @@ def create_toc(title, podcast_root, podcast_xml_location, audio_root=None, audio
         writer = csv.writer(f)
         writer.writerow(d.keys())
 
-        # Find all of the audio files
-        fs = []
-        if is_audio_file(audio_files_path):
-            fs.append(audio_files_path)
-            print("PODCAST PATH IS 1 AUDIO FILE", audio_files_path)
-        else:
+        # Find all of the audio files - if we haven't already put a SOLO in fs
+        if not SOLO:
             search = (audio_files_path).rglob("*") if recursive else (audio_files_path).glob("*")
             for f in search:
                 if is_audio_file(f):
@@ -307,8 +312,13 @@ def is_image(filename):
             return True
     return False
 
-def find_image(path):
-    for f in Path(path).rglob("*"):
+def find_image(path, recursive=True):
+    if not recursive:
+        files=Path(path).glob("*")
+    else:
+        files=Path(path).rglob("*")
+
+    for f in files:
         if is_image(f):
             return f
     return False
@@ -428,6 +438,7 @@ def do_entire_folder(audio_root,
     finished_dirs = {}
     standalone = []
     categories = []
+    super_podcast = [] # a podcast that aggregates audio in that folder, but also has sub-folders that became sub-podcasts inside of it
 
     # Only include
     if filter=='':
@@ -437,8 +448,8 @@ def do_entire_folder(audio_root,
     print("Filter", filter)
 
     for dir in audio_root.rglob(filter):
-        # TODO: Have user manually add a NO_RECURSVE file into folders that shouldn't be recursive
-        recursive = False # assume recursive podcast
+        # TODO: Have user manually add a RECURSVE file into folders that should be recursive
+        recursive = False # assume not recursive podcast
         _is_cd_multiset = False
         _skip_subdirectories = True
         # See if directory is working
@@ -488,6 +499,7 @@ def do_entire_folder(audio_root,
                     podcast_folder, title = create_podcast(dir)
                     recursive=False
                     _skip_subdirectories = False
+                    super_podcast.append(podcast_folder)
                 else:
                     # it is a top-level category OR no-audio files
                     continue
@@ -634,7 +646,7 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
     folders = Path(scan_folder).glob(filter)
     index_dst_folder.mkdir(exist_ok=True, parents=True)
     html_file = Path(index_dst_folder) / "index.html"
-
+    other_files = {}
 
     def check_for_podcast(subfolder, text=""):
         for p in subfolder.glob(name):
@@ -652,18 +664,19 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
 
     with html_file.open("w") as f:
         f.write("<pre>\n")
-        f.write(f'<a href="{html_path}/files.html">ALL</a>\n\n')
+        f.write(f'<a href="{html_path}/files.html">ALL FILES (RECURSIVE)</a>\n\n')
 
         temp_html_path = re.sub(r"(podcasts[l]*/)",r"\1data/",str(html_path))
-        f.write(f'<a href="{temp_html_path}">FILE_VIEW</a>\n\n')
+        f.write(f'<a href="{temp_html_path}">DIRECTORY VIEW</a>\n\n')
 
         ## Make this write HTML links
         for subfolder in sorted(folders):
+            found_podcast = False
             # Write out podcast link
             for p in subfolder.glob(name):
-                check_for_podcast(subfolder)
+                found_podcast = check_for_podcast(subfolder)
 
-            # Directory with (children directories OR other files)
+            # Directory with (children directories OR other files) - write out link
             is_dir_with_subs = (subfolder.is_dir() and has_children_folders(subfolder))
             if (is_dir_with_subs) or (find_other_files and has_book(subfolder)):
                 is_other_file_folder = not is_dir_with_subs
@@ -671,22 +684,40 @@ def _update_index(scan_folder, index_dst_folder, html_path, name="podcast.xml", 
                 text = subfolder.name
                 url = html_path / url_quote(rel_path.as_posix().encode())
 
-                # If it has one subfolder, append that to the name here
-                if is_dir_with_subs and len(list(subfolder.glob('*'))) == 1:
-                    subsubfolder = next(subfolder.glob('*/'))
-                    text = text + " / " + subsubfolder.name
-                    if check_for_podcast(subsubfolder, text=text): # make link to Podcast.xml if found
-                        continue # don't write anything else out
-                    else:
-                        rel_path = subsubfolder.relative_to(scan_folder)
-                        url = html_path / url_quote(rel_path.as_posix().encode())
+                # if there is just one item in the folder
+                if len(list(subfolder.glob('*'))) == 1:
 
+                    # If it has one subfolder, append that to the name here
+                    if is_dir_with_subs:
+                        subsubfolder = next(subfolder.glob('*/'))
+                        text = text + " / " + subsubfolder.name
+                        if check_for_podcast(subsubfolder, text=text): # make link to Podcast.xml if found
+                            if len(list(subsubfolder.glob('*'))) == 1: # if that was the only thing in the folder, continue; 
+                                # otherwise we still need to link to the folder to access other files
+                                continue # don't write anything else out
+                            else:
+                                text += " (other files)" # we already created a podcast link, but now link to folder to show other files
+                        else:
+                            rel_path = subsubfolder.relative_to(scan_folder)
+                            url = html_path / url_quote(rel_path.as_posix().encode())
+
+                    # if it's just one file in the subfolder
+                    elif find_other_files and has_book(subfolder):
+                        subsubfile = next(subfolder.glob('*'))
+                        text = text + " / " + subsubfile.name
+                        rel_path = subsubfile.relative_to(scan_folder)
+                        url = html_path / url_quote(rel_path.as_posix().encode())
+                        line = hyperlink.format(url, text) + "\n"
+                        other_files[text] = line # Write it out with standalone files (if find_other_files active)
+                        continue
+
+                elif is_dir_with_subs and found_podcast: # found a podcast with subfolders, potentially more podcasts
+                    text += " (more podcasts)"
                 line = hyperlink.format(url, text) + "\n"
                 f.write(line + "\n")
 
         # find other useful files that aren't podcast.xml
         if find_other_files:
-            other_files = {}
             for p in Path(scan_folder).glob('*'):
                 if p.name == "index.html":
                     continue
